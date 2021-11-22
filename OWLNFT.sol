@@ -1,6 +1,4 @@
-/**
- *Submitted for verification at BscScan.com on 2021-11-12
-*/
+
 
 // File: @openzeppelin/contracts/utils/introspection/IERC165.sol
 
