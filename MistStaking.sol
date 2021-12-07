@@ -1256,6 +1256,15 @@ contract OWLNFT is ERC721Enumerable, Ownable{
         tokenCharacteristics[_tokenId].level = _level;
         tokenCharacteristics[_tokenId].breed = _breed;
     }
+
+    function getTokenCharacteristics(uint _tokenId) public view returns(uint _level, string memory _breed, string memory _claw, string memory _wingspan, string memory _sight) {
+        _claw = tokenCharacteristics[_tokenId].claw ;
+        _wingspan = tokenCharacteristics[_tokenId].wingspan;
+        _sight = tokenCharacteristics[_tokenId].sight;
+        _level = tokenCharacteristics[_tokenId].level;
+        _breed = tokenCharacteristics[_tokenId].breed;
+        return (_level, _breed, _claw, _wingspan, _sight);
+    }
     
      /**
      * @notice remove tokenId from user address
@@ -1438,9 +1447,8 @@ contract MISTxStaking is Ownable, IERC721Receiver{
 
     //  array of holders;
     address[] public holders;
-    
-    uint public immutable MAX_TOKEN_PER_NFT = 100 ether;
-    
+
+    mapping (uint => uint) public tokenPrice;    
     mapping (address => uint) public depositedTokens;
     mapping (address => uint) public stakingTime;
     mapping (address => uint) public lastClaimedTime;
@@ -1505,14 +1513,18 @@ contract MISTxStaking is Ownable, IERC721Receiver{
         return holders.length;
     }
     
+    function updateTokenPrice(uint level, uint price) public onlyOwner{
+        tokenPrice[level] = price;
+    }
+
     /**
      * @notice Mint NFT token
      */
     
-    function mintNFTToken(uint _tokenId) internal {
-        totalStakedToken = totalStakedToken.add(MAX_TOKEN_PER_NFT);
+    function mintNFTToken(uint _tokenId, uint _price) internal {
+        totalStakedToken = totalStakedToken.add(_price);
         nftToken.mintToken(msg.sender, _tokenId);
-        depositedTokens[msg.sender] = depositedTokens[msg.sender].add(MAX_TOKEN_PER_NFT);
+        depositedTokens[msg.sender] = depositedTokens[msg.sender].add(_price);
     }
 
     /**
@@ -1520,16 +1532,27 @@ contract MISTxStaking is Ownable, IERC721Receiver{
      * @notice A transfer is used to bring tokens into the staking contract so pre-approval is required
      */
     function deposit(uint _tokenId) public {
-        require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), MAX_TOKEN_PER_NFT), "Insufficient Token Allowance");
+        // require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), MAX_TOKEN_PER_NFT), "Insufficient Token Allowance");
+        uint[] memory tokens = nftToken.tokenOwnedByUser(msg.sender);
+        uint _currentTokenLevel;
+        string memory _currentTokenBreed;
+
+        for(uint i = 0; i < tokens.length; i++){
+            (uint _level, string memory _breed, , , ) = nftToken.getTokenCharacteristics(tokens[i]);
+            (_currentTokenLevel, _currentTokenBreed, , , ) = nftToken.getTokenCharacteristics(_tokenId);
+            require(_level != _currentTokenLevel && keccak256(abi.encodePacked(_breed)) != keccak256(abi.encodePacked(_currentTokenBreed)), "Already have token of this level");
+        }
+        
+        require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), tokenPrice[_currentTokenLevel]), "Insufficient Token Allowance");
 
         if(nftToken.isTokenExists(_tokenId)){
             if(nftToken.ownerOf(_tokenId) == address(this)){
                 nftToken.safeTransferFrom(address(this), msg.sender, _tokenId);
             }else{
-                mintNFTToken(_tokenId);    
+                mintNFTToken(_tokenId, tokenPrice[_currentTokenLevel]);    
             }
         }else{
-            mintNFTToken(_tokenId);
+            mintNFTToken(_tokenId, tokenPrice[_currentTokenLevel]);
         }
 
         if(!onlyHolder()){
@@ -1544,13 +1567,14 @@ contract MISTxStaking is Ownable, IERC721Receiver{
      * @param _tokenId token id of NFT which user holds to withdraw amount
      */
     function withdrawWithNFT(uint _tokenId) public {
-        // require(block.timestamp.sub(stakingTime[msg.sender]) > cliffTime, "You recently staked, please wait before withdrawing.");
+
+        (uint _currentTokenLevel, , , , ) = nftToken.getTokenCharacteristics(_tokenId);
         
         nftToken.removeTokenIdFromUser(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId);
 
-        require(IERC20(mistTokenAddress).transfer(msg.sender, MAX_TOKEN_PER_NFT), "Could not transfer tokens.");
-        depositedTokens[msg.sender] = depositedTokens[msg.sender].sub(MAX_TOKEN_PER_NFT);
+        require(IERC20(mistTokenAddress).transfer(msg.sender, tokenPrice[_currentTokenLevel]), "Could not transfer tokens.");
+        depositedTokens[msg.sender] = depositedTokens[msg.sender].sub(tokenPrice[_currentTokenLevel]);
     }
     
     /**
