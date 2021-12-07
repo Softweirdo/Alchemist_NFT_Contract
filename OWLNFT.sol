@@ -1185,33 +1185,17 @@ contract OWLNFT is ERC721Enumerable, Ownable{
     
     mapping(uint => TokenCharacteristics) public tokenCharacteristics;
     
-    bool public isMintingPaused;
-    
     constructor() ERC721("OWL", "OWL") {
     }    
     
     address private minter;
     
     /**
-     * @notice Set minter role to mint and burn NFT tokentcall by only owner
+     * @notice Set minter role to mint and burn NFT token call by only owner
      * @param _minter account address of the minter
      */
     function setMinterRole(address _minter) public onlyOwner {
         minter = _minter;
-    }
-    
-    /**
-     * @notice Set minting unpause call by only owner
-     */
-    function startMinting() public onlyOwner{
-        isMintingPaused = false;
-    }
-    
-    /**
-     * @notice Set minting pause call by only owner
-     */
-    function stopMinting() public onlyOwner{
-        isMintingPaused = true;
     }
     
     /**
@@ -1233,7 +1217,6 @@ contract OWLNFT is ERC721Enumerable, Ownable{
      */
     function mintToken(address _toAddress, uint _tokenId) public {
         require(msg.sender == minter, "Sender does not have minter role");
-        require(!isMintingPaused, "Minting is pause");
         _mint(_toAddress, _tokenId);
         userToken[_toAddress].userAddress = _toAddress;
         userToken[_toAddress].tokenId.push(_tokenId);
@@ -1276,6 +1259,15 @@ contract OWLNFT is ERC721Enumerable, Ownable{
         tokenCharacteristics[_tokenId].level = _level;
         tokenCharacteristics[_tokenId].breed = _breed;
     }
+
+    function getTokenCharacteristics(uint _tokenId) public view returns(uint _level, string memory _breed, string memory _claw, string memory _wingspan, string memory _sight) {
+        _claw = tokenCharacteristics[_tokenId].claw ;
+        _wingspan = tokenCharacteristics[_tokenId].wingspan;
+        _sight = tokenCharacteristics[_tokenId].sight;
+        _level = tokenCharacteristics[_tokenId].level;
+        _breed = tokenCharacteristics[_tokenId].breed;
+        return (_level, _breed, _claw, _wingspan, _sight);
+    }
     
      /**
      * @notice remove tokenId from user address
@@ -1304,6 +1296,9 @@ contract OWLNFT is ERC721Enumerable, Ownable{
         }
     }
     
+    function isTokenExists(uint256 _tokenId) public view returns(bool){
+        return _exists(_tokenId);
+    }
     
     function tokenOwnedByUser(address _owner) public view returns (uint256[] memory){
         uint256 ownerTokenCount = balanceOf(_owner);
@@ -1312,10 +1307,6 @@ contract OWLNFT is ERC721Enumerable, Ownable{
           tokenIds[i] = tokenOfOwnerByIndex(_owner, i);
         }
         return tokenIds;
-    }
-    
-    function isTokenExists(uint256 _tokenId) public view returns(bool){
-        return _exists(_tokenId);
     }
 
     function tokenURI(uint256 _tokenId)
