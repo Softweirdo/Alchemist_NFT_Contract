@@ -1445,10 +1445,16 @@ contract MISTxStaking is Ownable, IERC721Receiver{
     
     uint public totalStakedToken = 0;
 
+    // unstaking fee 2 percent
+    uint public unstakingFeeRate;
+
+    uint public saleStage;
+
     //  array of holders;
     address[] public holders;
 
-    mapping (uint => uint) public tokenPrice;    
+    mapping (uint => uint) public tokenPrice;
+    mapping (uint => uint) public phoenixTokenPrice;    
     mapping (address => uint) public depositedTokens;
     mapping (address => uint) public stakingTime;
     mapping (address => uint) public lastClaimedTime;
@@ -1512,9 +1518,24 @@ contract MISTxStaking is Ownable, IERC721Receiver{
     function getNumberOfHolders() public view returns (uint) {
         return holders.length;
     }
+
+    /**
+     * @notice Change Unstaking fee rate
+     */
+    function setUnstakingFeeRate(uint _rate) public onlyOwner{
+        unstakingFeeRate = _rate;
+    }
+
+    function updateSaleStage(uint level) public onlyOwner{
+        saleStage = level;
+    }
     
     function updateTokenPrice(uint level, uint price) public onlyOwner{
         tokenPrice[level] = price;
+    }
+
+    function updatePhoenixTokenPrice(uint level, uint price) public onlyOwner{
+        phoenixTokenPrice[level] = price;
     }
 
     /**
@@ -1532,7 +1553,6 @@ contract MISTxStaking is Ownable, IERC721Receiver{
      * @notice A transfer is used to bring tokens into the staking contract so pre-approval is required
      */
     function deposit(uint _tokenId) public {
-        // require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), MAX_TOKEN_PER_NFT), "Insufficient Token Allowance");
         uint[] memory tokens = nftToken.tokenOwnedByUser(msg.sender);
         uint _currentTokenLevel;
         string memory _currentTokenBreed;
@@ -1543,7 +1563,14 @@ contract MISTxStaking is Ownable, IERC721Receiver{
             require(_level != _currentTokenLevel && keccak256(abi.encodePacked(_breed)) != keccak256(abi.encodePacked(_currentTokenBreed)), "Already have token of this level");
         }
         
-        require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), tokenPrice[_currentTokenLevel]), "Insufficient Token Allowance");
+        (_currentTokenLevel, _currentTokenBreed, , , ) = nftToken.getTokenCharacteristics(_tokenId);
+        require(_currentTokenLevel <= saleStage, "Sale is not started yet for the token level");
+        if(keccak256(abi.encodePacked(_currentTokenBreed)) == keccak256(abi.encodePacked("0"))){
+            require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), phoenixTokenPrice[_currentTokenLevel]), "Insufficient Token Allowance");
+        }else{
+            require(IERC20(mistTokenAddress).transferFrom(msg.sender, address(this), tokenPrice[_currentTokenLevel]), "Insufficient Token Allowance");
+        }
+        
 
         if(nftToken.isTokenExists(_tokenId)){
             if(nftToken.ownerOf(_tokenId) == address(this)){
@@ -1568,13 +1595,25 @@ contract MISTxStaking is Ownable, IERC721Receiver{
      */
     function withdrawWithNFT(uint _tokenId) public {
 
-        (uint _currentTokenLevel, , , , ) = nftToken.getTokenCharacteristics(_tokenId);
-        
+        uint _currentTokenLevel;
+        string memory _currentTokenBreed;
+
+        (_currentTokenLevel, _currentTokenBreed, , , ) = nftToken.getTokenCharacteristics(_tokenId); 
+
         nftToken.removeTokenIdFromUser(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId);
 
-        require(IERC20(mistTokenAddress).transfer(msg.sender, tokenPrice[_currentTokenLevel]), "Could not transfer tokens.");
-        depositedTokens[msg.sender] = depositedTokens[msg.sender].sub(tokenPrice[_currentTokenLevel]);
+        if(keccak256(abi.encodePacked(_currentTokenBreed)) == keccak256(abi.encodePacked("0"))){
+            uint fee = phoenixTokenPrice[_currentTokenLevel].mul(unstakingFeeRate).div(1e4);
+            uint amountAfterFee = phoenixTokenPrice[_currentTokenLevel].sub(fee);
+            require(IERC20(mistTokenAddress).transfer(msg.sender, amountAfterFee), "Could not transfer tokens.");
+            depositedTokens[msg.sender] = depositedTokens[msg.sender].sub(phoenixTokenPrice[_currentTokenLevel]);
+        }else{
+            uint fee = tokenPrice[_currentTokenLevel].mul(unstakingFeeRate).div(1e4);
+            uint amountAfterFee = tokenPrice[_currentTokenLevel].sub(fee);
+            require(IERC20(mistTokenAddress).transfer(msg.sender, amountAfterFee), "Could not transfer tokens.");
+            depositedTokens[msg.sender] = depositedTokens[msg.sender].sub(tokenPrice[_currentTokenLevel]);
+        }
     }
     
     /**
@@ -1614,11 +1653,16 @@ contract MISTxStaking is Ownable, IERC721Receiver{
         return (_stakers, _stakingTimestamps, _lastClaimedTimeStamps, _stakedTokens);
     }
 
-    // function to allow admin to claim *other* ERC20 tokens sent to this contract (by mistake)
+    // function to allow admin to claim *other* BEP20 tokens sent to this contract (by mistake)
     // Admin cannot transfer out Staking Token from this smart contract
-    function transferAnyERC20Tokens(address _tokenAddr, address _to, uint _amount) public onlyOwner {
+    function transferAnyBEP20Tokens(address _tokenAddr, address _to, uint _amount) public onlyOwner {
         require (_tokenAddr != mistTokenAddress, "Cannot Transfer Out Staking Token!");
         IERC20(_tokenAddr).transfer(_to, _amount);
+    }
+
+    // function to allow admin to claim *other* NFT tokens sent to this contract (by mistake)
+    function transferAnyNFT(address _nftAddress, address _to, uint _tokenId) public onlyOwner {
+        OWLNFT(_nftAddress).safeTransferFrom(address(this), _to, _tokenId);
     }
     
 }
